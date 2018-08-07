@@ -1,29 +1,27 @@
 package blockchain
 
 import (
-	"encoding/json"
+	"fmt"
 	"testing"
 )
 
 func TestFirstBlock(t *testing.T) {
 	n := NewBlockchain()
-	if n.index != 1 {
-		t.Fatalf("index num is wrong.got=%d", n.index)
+	if n.Index != 1 {
+		t.Fatalf("index num is wrong.got=%d", n.Index)
 	}
 	tests := []struct {
 		proof        Proof
 		expectedLeng int
-	}{
-		{1, 2},
-	}
+	}{{1, 2}}
 	for _, tt := range tests {
-		lengthOfCurrentTransactions := len(n.currentTransactions)
+		lengthOfCurrentTransactions := len(n.CurrentTransactions)
 		nb := n.NewBlock(
 			tt.proof,
 		)
-		length := len(n.chain)
+		length := len(n.Chain)
 		if length != tt.expectedLeng {
-			t.Fatalf("length of chain is wrong.got=%d, want=%d. %+v", length, tt.expectedLeng, n.chain)
+			t.Fatalf("length of chain is wrong.got=%d, want=%d. %+v", length, tt.expectedLeng, n.Chain)
 		}
 		if len(nb.Transactions) != lengthOfCurrentTransactions {
 			t.Fatalf("length of transactions is wrong.got=%d", len(nb.Transactions))
@@ -31,21 +29,35 @@ func TestFirstBlock(t *testing.T) {
 	}
 }
 
-func TestNewTransaction(t *testing.T) {
+func TestNewTransactions(t *testing.T) {
 	b := NewBlockchain()
-	index := b.NewTransaction("sender", "recipient", 100)
+	index := b.NewTransaction("sender1", "recipient1", 100)
 	expectedVal := 2
 	if index != expectedVal {
 		t.Fatalf("num is wrong. got=%d, want=%d", index, expectedVal)
 	}
 
-	ct := b.currentTransactions[len(b.currentTransactions)-1]
+	ct := b.CurrentTransactions[len(b.CurrentTransactions)-1]
 
-	if ct.sender != "sender" {
+	if ct.Sender != "sender1" {
 		t.Fatalf("expected val is wrong")
 	}
-	if ct.recipient != "recipient" {
+	if ct.Recipient != "recipient1" {
 		t.Fatalf("expected val is wrong")
+	}
+
+	index = b.NewTransaction("sender2", "recipient2", 200)
+	expectedVal = 2
+	if index != expectedVal {
+		t.Fatalf("num is wrong. got=%d, want=%d", index, expectedVal)
+	}
+	lb := b.LastBlock()
+	p := b.ProofOfWork(lb.Proof)
+	b.NewBlock(p)
+	index = b.NewTransaction("sender3", "recipient3", 500)
+	expectedVal = 3
+	if index != expectedVal {
+		t.Fatalf("num is wrong. got=%d, want=%d", index, expectedVal)
 	}
 
 }
@@ -89,9 +101,88 @@ func TestHash(t *testing.T) {
 		PreviousHash: "100",
 	}
 	expectedVal := "7f8b201e0065c8a96ff7684c413681235ec286cdb3b33d230afbf5fe2c103540"
-	b, _ := json.Marshal(input)
-	v := hash(string(b))
+	v := hash(input)
 	if v != expectedVal {
 		t.Fatalf("hash is wrong.got=%s", v)
 	}
+}
+
+func TestStoreAndLoadBlockChain(t *testing.T) {
+	data := NewBlockchain()
+	err := StoreBlockChain(data)
+	if err != nil {
+		t.Fatalf("Store got error. err: %s", err)
+	}
+
+	bc := &Blockchain{}
+	err = LoadBlockChain(bc)
+	if err != nil {
+		t.Fatalf("Load got error. err: %s", err)
+	}
+	if bc.Index != data.Index {
+		t.Fatalf("Store and Load got error.")
+	}
+}
+
+func TestAddNodeLists(t *testing.T) {
+	bc := NewBlockchain()
+	tests := []struct {
+		input       string
+		expectedVal Node
+	}{
+		{"http://192.168.0.5:5000", "192.168.0.5:5000"},
+		{"http://192.168.0.3:5000/chain", "192.168.0.3:5000"},
+		{"http://www.google.com/serch", "www.google.com"},
+	}
+	for _, tt := range tests {
+		bc.RegisterNode(tt.input)
+		addedNode := bc.Nodes[len(bc.Nodes)-1]
+		if addedNode != tt.expectedVal {
+			t.Fatalf("register node failed.got=%v, want=%v", addedNode, tt.expectedVal)
+		}
+
+	}
+}
+
+func TestValidChain(t *testing.T) {
+	bc := NewBlockchain()
+	lb := bc.LastBlock()
+	lastProof := lb.Proof
+	p := bc.ProofOfWork(lastProof)
+	bc.NewBlock(p)
+
+	ok := bc.ValidChain(bc.Chain)
+	if !ok {
+		t.Fatalf("validation failed")
+	}
+
+	lb = bc.LastBlock()
+	lastProof = lb.Proof
+	p = bc.ProofOfWork(lastProof)
+	bc.NewBlock(p)
+
+	ok = bc.ValidChain(bc.Chain)
+	if !ok {
+		t.Fatalf("validation failed")
+	}
+
+	bc2 := NewBlockchain()
+	randamProof := Proof(1234)
+	bc2.NewBlock(randamProof)
+	ok = bc2.ValidChain(bc2.Chain)
+	if ok {
+		t.Fatalf("validation should be failed")
+	}
+
+}
+
+func TestResolveConflict(t *testing.T) {
+	bc := NewBlockchain()
+	bc.RegisterNode("http://localhost:8082")
+	fmt.Println(bc.Chain)
+	ok := bc.ResolveConflict()
+	if !ok {
+		t.Fatalf("should be false")
+	}
+	fmt.Println(bc.Chain)
 }
